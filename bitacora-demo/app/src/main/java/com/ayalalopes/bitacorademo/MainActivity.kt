@@ -57,7 +57,8 @@ class MainActivity : Activity() {
             "Eres un analista de acción del precio. Recibes una captura de un gráfico de velas " +
                 "de opciones binarias. Observa solo las últimas 4 a 6 velas del extremo derecho. " +
                 "Evalúa cuerpos, mechas, fuerza inmediata y patrón (pin bar, envolvente, continuación, giro). " +
-                "Responde SOLO con JSON: {\"prob\": entero entre 50 y 75, \"accion\": \"BUY\" o \"SELL\", " +
+                "Se te indica el tiempo de expiración de la operación: a 5 o 15 segundos pesa solo el impulso inmediato de las últimas velas; a 1 o 3 minutos pesa más la tendencia reciente. " +
+            "Responde SOLO con JSON: {\"prob\": entero entre 50 y 75, \"accion\": \"BUY\" o \"SELL\", " +
                 "\"patron\": \"nombre corto\", \"riesgo\": \"LOW\" o \"MEDIUM\" o \"HIGH\"}. " +
                 "prob es tu confianza subjetiva, no una probabilidad calculada: sé conservador y casi " +
                 "nunca superes 65. Si la imagen no es un gráfico de velas legible, responde " +
@@ -87,6 +88,7 @@ class MainActivity : Activity() {
     private lateinit var modelInput: EditText
     private lateinit var keyStatus: TextView
     private lateinit var liveStatus: TextView
+    private val expiryBtns = mutableMapOf<Int, Button>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -204,7 +206,10 @@ class MainActivity : Activity() {
             "inline_data",
             JSONObject().put("mime_type", "image/jpeg").put("data", imageB64)
         )
-        val text = JSONObject().put("text", "Analiza esta captura.")
+        val text = JSONObject().put(
+            "text",
+            "Analiza esta captura. La operación expira en ${Expiry.long(prefs.getInt("expiry", Expiry.DEFAULT))}."
+        )
         val body = JSONObject()
             .put(
                 "systemInstruction",
@@ -368,6 +373,31 @@ class MainActivity : Activity() {
 
         root.addView(tv("BITÁCORA DEMO", 22f, TEXT, true))
         root.addView(tv("Práctica con dinero virtual", 13f, MUTED))
+
+        // Temporalidad de la entrada
+        val tf = card()
+        tf.addView(tv("TEMPORALIDAD DE LA ENTRADA", 11f, MUTED, true))
+        tf.addView(
+            tv(
+                "Tiempo de expiración de la operación. Se envía a la IA y también puedes cambiarlo desde el panel flotante.",
+                12f, MUTED
+            ).apply { setPadding(0, dp(6), 0, 0) }
+        )
+        val tfRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) }
+        }
+        Expiry.OPTIONS.forEach { sec ->
+            val b = button(Expiry.short(sec), ACCENT, BG) {
+                prefs.edit().putInt("expiry", sec).apply()
+                updateExpiryButtons()
+            }
+            expiryBtns[sec] = b
+            tfRow.addView(b, weighted())
+        }
+        tf.addView(tfRow)
+        root.addView(tf)
+        updateExpiryButtons()
 
         // Panel de análisis con IA
         val ai = card()
@@ -578,6 +608,11 @@ class MainActivity : Activity() {
             isFillViewport = true
             addView(root)
         })
+    }
+
+    private fun updateExpiryButtons() {
+        val current = prefs.getInt("expiry", Expiry.DEFAULT)
+        expiryBtns.forEach { (sec, b) -> b.alpha = if (sec == current) 1f else 0.35f }
     }
 
     private fun updateDirButtons() {

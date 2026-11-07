@@ -6,6 +6,20 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /** Llamada a la API de Gemini usada por el modo en vivo. */
+/** Opciones de tiempo de expiración de la operación (en segundos). */
+object Expiry {
+    val OPTIONS = listOf(5, 15, 60, 180)
+    const val DEFAULT = 60
+    fun short(s: Int) = if (s < 60) "${s}s" else "${s / 60}m"
+    fun long(s: Int) = when (s) {
+        5 -> "5 segundos"
+        15 -> "15 segundos"
+        60 -> "1 minuto"
+        180 -> "3 minutos"
+        else -> "$s segundos"
+    }
+}
+
 object Gemini {
     const val DEFAULT_MODEL = "gemini-3.6-flash"
 
@@ -13,18 +27,19 @@ object Gemini {
         "Eres un analista de acción del precio. Recibes una captura de un gráfico de velas " +
             "de opciones binarias. Observa solo las últimas 4 a 6 velas del extremo derecho. " +
             "Evalúa cuerpos, mechas, fuerza inmediata y patrón (pin bar, envolvente, continuación, giro). " +
+            "Se te indica el tiempo de expiración de la operación: a 5 o 15 segundos pesa solo el impulso inmediato de las últimas velas; a 1 o 3 minutos pesa más la tendencia reciente. " +
             "Responde SOLO con JSON: {\"prob\": entero entre 50 y 75, \"accion\": \"BUY\" o \"SELL\", " +
             "\"patron\": \"nombre corto\", \"riesgo\": \"LOW\" o \"MEDIUM\" o \"HIGH\"}. " +
             "prob es tu confianza subjetiva, no una probabilidad calculada: sé conservador y casi " +
             "nunca superes 65. Si la imagen no es un gráfico de velas legible, responde " +
             "{\"error\": \"motivo breve\"}."
 
-    fun analyze(key: String, model: String, imageB64: String): JSONObject {
+    fun analyze(key: String, model: String, imageB64: String, expirySec: Int): JSONObject {
         val image = JSONObject().put(
             "inline_data",
             JSONObject().put("mime_type", "image/jpeg").put("data", imageB64)
         )
-        val text = JSONObject().put("text", "Analiza esta captura.")
+        val text = JSONObject().put("text", "Analiza esta captura. La operación expira en ${Expiry.long(expirySec)}.")
         val body = JSONObject()
             .put(
                 "systemInstruction",

@@ -63,6 +63,7 @@ class ScreenService : Service() {
     private lateinit var actionText: TextView
     private lateinit var detailText: TextView
     private lateinit var autoBtn: Button
+    private lateinit var expiryBtn: Button
     private var auto = false
     private var busy = false
     private var stopped = false
@@ -217,6 +218,14 @@ class ScreenService : Service() {
         }
         box.addView(detailText)
 
+        expiryBtn = smallButton("", BG, ACCENT) { cycleExpiry() }
+        box.addView(
+            expiryBtn,
+            LinearLayout.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, dp(36))
+                .apply { topMargin = dp(6) }
+        )
+        updateExpiryText()
+
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setPadding(0, dp(8), 0, 0)
@@ -263,6 +272,20 @@ class ScreenService : Service() {
 
         wm.addView(box, params)
         panel = box
+    }
+
+    private fun currentExpiry(): Int =
+        getSharedPreferences("bitacora", MODE_PRIVATE).getInt("expiry", Expiry.DEFAULT)
+
+    private fun updateExpiryText() {
+        expiryBtn.text = "⏱ Expiración: ${Expiry.long(currentExpiry())}  (toca para cambiar)"
+    }
+
+    private fun cycleExpiry() {
+        val opts = Expiry.OPTIONS
+        val next = opts[(opts.indexOf(currentExpiry()) + 1) % opts.size]
+        getSharedPreferences("bitacora", MODE_PRIVATE).edit().putInt("expiry", next).apply()
+        updateExpiryText()
     }
 
     private fun toggleAuto() {
@@ -312,7 +335,7 @@ class ScreenService : Service() {
                     if (isBlack(bmp)) throw RuntimeException(
                         "Pantalla negra: la app bloquea la captura. Usa Pocket Option desde el navegador."
                     )
-                    result = Gemini.analyze(key, model, encode(bmp))
+                    result = Gemini.analyze(key, model, encode(bmp), currentExpiry())
                 } catch (e: Exception) {
                     result = e
                 }
