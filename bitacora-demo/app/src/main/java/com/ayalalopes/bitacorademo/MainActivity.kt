@@ -10,7 +10,10 @@ import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.os.Bundle
 import android.util.Base64
 import android.text.InputType
@@ -48,6 +51,7 @@ class MainActivity : Activity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         const val REQ_PICK = 1
+        const val REQ_CAPTURE = 2
         const val DEFAULT_MODEL = "gemini-3.6-flash"
         const val SYSTEM_PROMPT =
             "Eres un analista de acción del precio. Recibes una captura de un gráfico de velas " +
@@ -82,6 +86,7 @@ class MainActivity : Activity() {
     private lateinit var keyInput: EditText
     private lateinit var modelInput: EditText
     private lateinit var keyStatus: TextView
+    private lateinit var liveStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -110,6 +115,23 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun startLive() {
+        if (prefs.getString("geminikey", "").isNullOrEmpty()) {
+            liveStatus.text = "Primero guarda tu clave de Gemini (sección de abajo)."
+            return
+        }
+        if (!Settings.canDrawOverlays(this)) {
+            liveStatus.text = "Activa \"Mostrar sobre otras apps\" para esta app y vuelve a pulsar el botón."
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            )
+            return
+        }
+        val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        @Suppress("DEPRECATION")
+        startActivityForResult(mpm.createScreenCaptureIntent(), REQ_CAPTURE)
+    }
+
     private fun pickImage() {
         val i = Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
         startActivityForResult(Intent.createChooser(i, "Elegir captura"), REQ_PICK)
@@ -120,6 +142,18 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == REQ_PICK && resultCode == RESULT_OK) {
             data?.data?.let { analyze(it) }
+        }
+        if (requestCode == REQ_CAPTURE) {
+            if (resultCode == RESULT_OK && data != null) {
+                val svc = Intent(this, ScreenService::class.java)
+                    .putExtra(ScreenService.EXTRA_CODE, resultCode)
+                    .putExtra(ScreenService.EXTRA_DATA, data)
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(svc) else startService(svc)
+                liveStatus.text = "Activo. Abre Pocket Option: verás el panel flotante encima."
+                moveTaskToBack(true)
+            } else {
+                liveStatus.text = "Se canceló el permiso de captura."
+            }
         }
     }
 
@@ -353,6 +387,26 @@ class MainActivity : Activity() {
         ).apply { setPadding(0, dp(10), 0, 0) }
         ai.addView(aiStatus)
         root.addView(ai)
+
+        // Modo en vivo
+        val live = card()
+        live.addView(tv("MODO PANTALLA EN VIVO", 11f, MUTED, true))
+        live.addView(
+            tv(
+                "Muestra un panel flotante encima de Pocket Option. Tócalo para analizar la pantalla " +
+                    "al momento, o activa AUTO para que lo haga cada 20 s.",
+                13f, TEXT
+            ).apply { setPadding(0, dp(6), 0, 0) }
+        )
+        live.addView(button("ACTIVAR PANEL FLOTANTE", ACCENT, BG) { startLive() }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(52)).apply { topMargin = dp(12) }
+        })
+        liveStatus = tv(
+            "Necesita permiso para mostrar sobre otras apps y para capturar la pantalla.",
+            12f, MUTED
+        ).apply { setPadding(0, dp(10), 0, 0) }
+        live.addView(liveStatus)
+        root.addView(live)
 
         // Panel de estadísticas
         val stats = card()
