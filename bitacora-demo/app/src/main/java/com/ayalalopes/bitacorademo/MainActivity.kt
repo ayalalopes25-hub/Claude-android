@@ -2,12 +2,17 @@ package com.ayalalopes.bitacorademo
 
 import android.app.Activity
 import android.app.AlertDialog
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.res.ColorStateList
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
+import android.net.Uri
 import android.os.Bundle
+import android.util.Base64
 import android.text.InputType
 import android.text.Editable
 import android.text.TextWatcher
@@ -21,6 +26,9 @@ import android.widget.ScrollView
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -39,6 +47,17 @@ class MainActivity : Activity() {
         val TEXT = Color.parseColor("#E8F3EF")
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
+        const val REQ_PICK = 1
+        const val MODEL = "claude-sonnet-5-5"
+        const val SYSTEM_PROMPT =
+            "Eres un analista de acción del precio. Recibes una captura de un gráfico de velas " +
+                "de opciones binarias. Observa solo las últimas 4 a 6 velas del extremo derecho. " +
+                "Evalúa cuerpos, mechas, fuerza inmediata y patrón (pin bar, envolvente, continuación, giro). " +
+                "Responde SOLO con JSON: {\"prob\": entero entre 50 y 75, \"accion\": \"BUY\" o \"SELL\", " +
+                "\"patron\": \"nombre corto\", \"riesgo\": \"LOW\" o \"MEDIUM\" o \"HIGH\"}. " +
+                "prob es tu confianza subjetiva, no una probabilidad calculada: sé conservador y casi " +
+                "nunca superes 65. Si la imagen no es un gráfico de velas legible, responde " +
+                "{\"error\": \"motivo breve\"}."
     }
 
     private lateinit var prefs: SharedPreferences
@@ -56,6 +75,12 @@ class MainActivity : Activity() {
     private lateinit var buyBtn: Button
     private lateinit var sellBtn: Button
     private lateinit var history: LinearLayout
+    private lateinit var aiProb: TextView
+    private lateinit var aiAction: TextView
+    private lateinit var aiPattern: TextView
+    private lateinit var aiStatus: TextView
+    private lateinit var keyInput: EditText
+    private lateinit var keyStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -65,6 +90,148 @@ class MainActivity : Activity() {
         window.navigationBarColor = BG
         buildUi()
         refresh()
+        handleShare(intent)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleShare(intent)
+    }
+
+    // ---------- Análisis con IA ----------
+
+    @Suppress("DEPRECATION")
+    private fun handleShare(i: Intent?) {
+        if (i?.action == Intent.ACTION_SEND && i.type?.startsWith("image/") == true) {
+            val uri = i.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+            if (uri != null) analyze(uri)
+        }
+    }
+
+    private fun pickImage() {
+        val i = Intent(Intent.ACTION_GET_CONTENT).apply { type = "image/*" }
+        startActivityForResult(Intent.createChooser(i, "Elegir captura"), REQ_PICK)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_PICK && resultCode == RESULT_OK) {
+            data?.data?.let { analyze(it) }
+        }
+    }
+
+    private fun analyze(uri: Uri) {
+        val key = prefs.getString("apikey", "").orEmpty()
+        if (key.isEmpty()) {
+            aiStatus.text = "Primero guarda tu clave API en la sección de abajo."
+            return
+        }
+        aiProb.text = "…"
+        aiAction.text = ""
+        aiPattern.text = ""
+        aiStatus.text = "Analizando captura…"
+        Thread {
+            val result: Any = try {
+                parseAnswer(callApi(key, encodeImage(uri)))
+            } catch (e: Exception) {
+                e
+            }
+            runOnUiThread {
+                when (result) {
+                    is JSONObject -> showResult(result)
+                    is Exception -> {
+                        aiProb.text = "—"
+                        aiStatus.text = result.message ?: "Error desconocido"
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun encodeImage(uri: Uri): String {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, bounds) }
+        var sample = 1
+        while (bounds.outWidth / sample > 2000) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bmp = contentResolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, opts) }
+            ?: throw RuntimeException("No se pudo leer la imagen.")
+        val out = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    }
+
+    private fun callApi(key: String, imageB64: String): String {
+        val image = JSONObject()
+            .put("type", "image")
+            .put(
+                "source",
+                JSONObject().put("type", "base64").put("media_type", "image/jpeg").put("data", imageB64)
+            )
+        val text = JSONObject().put("type", "text").put("text", "Analiza esta captura.")
+        val body = JSONObject()
+            .put("model", MODEL)
+            .put("max_tokens", 300)
+            .put("system", SYSTEM_PROMPT)
+            .put(
+                "messages",
+                JSONArray().put(
+                    JSONObject().put("role", "user").put("content", JSONArray().put(image).put(text))
+                )
+            )
+
+        val conn = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
+        try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 15000
+            conn.readTimeout = 60000
+            conn.doOutput = true
+            conn.setRequestProperty("x-api-key", key)
+            conn.setRequestProperty("anthropic-version", "2023-06-01")
+            conn.setRequestProperty("content-type", "application/json")
+            conn.outputStream.use { it.write(body.toString().toByteArray()) }
+
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val msg = try {
+                    JSONObject(raw).getJSONObject("error").getString("message")
+                } catch (e: Exception) {
+                    raw.take(150)
+                }
+                throw RuntimeException("Error $code: $msg")
+            }
+            return JSONObject(raw).getJSONArray("content").getJSONObject(0).getString("text")
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun parseAnswer(text: String): JSONObject {
+        val start = text.indexOf('{')
+        val end = text.lastIndexOf('}')
+        if (start < 0 || end <= start) throw RuntimeException("Respuesta inesperada de la IA.")
+        val json = JSONObject(text.substring(start, end + 1))
+        if (json.has("error")) throw RuntimeException(json.optString("error", "No se pudo analizar."))
+        return json
+    }
+
+    private fun showResult(json: JSONObject) {
+        val prob = json.optInt("prob", 50).coerceIn(50, 75)
+        val action = if (json.optString("accion").uppercase() == "SELL") "SELL" else "BUY"
+        val pattern = json.optString("patron", "—")
+        val risk = json.optString("riesgo", "—").uppercase()
+
+        aiProb.text = "$prob%"
+        aiAction.text = action
+        aiAction.setTextColor(if (action == "BUY") GREEN else RED)
+        aiPattern.text = "$pattern  ·  Riesgo: $risk"
+        aiStatus.text = "Estimación subjetiva de la IA, no un cálculo. " +
+            "Regístrala abajo y compárala con tu acierto real."
+        dir = action
+        updateDirButtons()
     }
 
     // ---------- Datos ----------
@@ -159,6 +326,25 @@ class MainActivity : Activity() {
 
         root.addView(tv("BITÁCORA DEMO", 22f, TEXT, true))
         root.addView(tv("Práctica con dinero virtual", 13f, MUTED))
+
+        // Panel de análisis con IA
+        val ai = card()
+        ai.addView(tv("ANÁLISIS IA DE LA CAPTURA", 11f, MUTED, true))
+        aiProb = tv("—", 56f, TEXT, true)
+        ai.addView(aiProb)
+        aiAction = tv("", 22f, GREEN, true)
+        ai.addView(aiAction)
+        aiPattern = tv("", 14f, TEXT)
+        ai.addView(aiPattern)
+        ai.addView(button("ELEGIR CAPTURA Y ANALIZAR", ACCENT, BG) { pickImage() }.apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, dp(52)).apply { topMargin = dp(12) }
+        })
+        aiStatus = tv(
+            "Toma una captura del gráfico y compártela a esta app, o elígela aquí.",
+            12f, MUTED
+        ).apply { setPadding(0, dp(10), 0, 0) }
+        ai.addView(aiStatus)
+        root.addView(ai)
 
         // Panel de estadísticas
         val stats = card()
@@ -265,6 +451,46 @@ class MainActivity : Activity() {
         }, weighted())
         hist.addView(actions)
         root.addView(hist)
+
+        // Configuración de la clave API
+        val cfg = card()
+        cfg.addView(tv("CLAVE API (ANTHROPIC)", 11f, MUTED, true))
+        cfg.addView(
+            tv(
+                "Se guarda solo en este celular. Cada análisis consume créditos de tu cuenta de la API.",
+                12f, MUTED
+            ).apply { setPadding(0, dp(6), 0, 0) }
+        )
+        keyInput = input(
+            "Pega tu clave aquí",
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        ).apply {
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+        }
+        cfg.addView(keyInput)
+        keyStatus = tv(
+            if (prefs.getString("apikey", "").isNullOrEmpty()) "Sin clave guardada." else "Clave guardada ✔",
+            12f, ACCENT
+        ).apply { setPadding(0, dp(8), 0, 0) }
+        cfg.addView(keyStatus)
+        val keyRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
+        }
+        keyRow.addView(button("Guardar clave", BG, ACCENT) {
+            val k = keyInput.text.toString().trim()
+            if (k.isNotEmpty()) {
+                prefs.edit().putString("apikey", k).apply()
+                keyInput.setText("")
+                keyStatus.text = "Clave guardada ✔"
+            }
+        }, weighted())
+        keyRow.addView(button("Quitar clave", BG, RED) {
+            prefs.edit().remove("apikey").apply()
+            keyStatus.text = "Sin clave guardada."
+        }, weighted())
+        cfg.addView(keyRow)
+        root.addView(cfg)
 
         root.addView(
             tv(
