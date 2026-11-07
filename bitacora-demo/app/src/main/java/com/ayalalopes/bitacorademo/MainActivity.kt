@@ -48,7 +48,7 @@ class MainActivity : Activity() {
         const val MATCH = ViewGroup.LayoutParams.MATCH_PARENT
         const val WRAP = ViewGroup.LayoutParams.WRAP_CONTENT
         const val REQ_PICK = 1
-        const val MODEL = "claude-sonnet-5-5"
+        const val DEFAULT_MODEL = "gemini-3.6-flash"
         const val SYSTEM_PROMPT =
             "Eres un analista de acción del precio. Recibes una captura de un gráfico de velas " +
                 "de opciones binarias. Observa solo las últimas 4 a 6 velas del extremo derecho. " +
@@ -80,11 +80,13 @@ class MainActivity : Activity() {
     private lateinit var aiPattern: TextView
     private lateinit var aiStatus: TextView
     private lateinit var keyInput: EditText
+    private lateinit var modelInput: EditText
     private lateinit var keyStatus: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = getSharedPreferences("bitacora", MODE_PRIVATE)
+        prefs.edit().remove("apikey").apply()
         load()
         window.statusBarColor = BG
         window.navigationBarColor = BG
@@ -122,7 +124,7 @@ class MainActivity : Activity() {
     }
 
     private fun analyze(uri: Uri) {
-        val key = prefs.getString("apikey", "").orEmpty()
+        val key = prefs.getString("geminikey", "").orEmpty()
         if (key.isEmpty()) {
             aiStatus.text = "Primero guarda tu clave API en la sección de abajo."
             return
@@ -163,32 +165,34 @@ class MainActivity : Activity() {
     }
 
     private fun callApi(key: String, imageB64: String): String {
-        val image = JSONObject()
-            .put("type", "image")
-            .put(
-                "source",
-                JSONObject().put("type", "base64").put("media_type", "image/jpeg").put("data", imageB64)
-            )
-        val text = JSONObject().put("type", "text").put("text", "Analiza esta captura.")
+        val model = prefs.getString("model", DEFAULT_MODEL).orEmpty().ifEmpty { DEFAULT_MODEL }
+        val image = JSONObject().put(
+            "inline_data",
+            JSONObject().put("mime_type", "image/jpeg").put("data", imageB64)
+        )
+        val text = JSONObject().put("text", "Analiza esta captura.")
         val body = JSONObject()
-            .put("model", MODEL)
-            .put("max_tokens", 300)
-            .put("system", SYSTEM_PROMPT)
             .put(
-                "messages",
-                JSONArray().put(
-                    JSONObject().put("role", "user").put("content", JSONArray().put(image).put(text))
-                )
+                "systemInstruction",
+                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT)))
+            )
+            .put(
+                "contents",
+                JSONArray().put(JSONObject().put("parts", JSONArray().put(image).put(text)))
+            )
+            .put(
+                "generationConfig",
+                JSONObject().put("responseMimeType", "application/json").put("maxOutputTokens", 1024)
             )
 
-        val conn = URL("https://api.anthropic.com/v1/messages").openConnection() as HttpURLConnection
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+        val conn = URL(url).openConnection() as HttpURLConnection
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15000
             conn.readTimeout = 60000
             conn.doOutput = true
-            conn.setRequestProperty("x-api-key", key)
-            conn.setRequestProperty("anthropic-version", "2023-06-01")
+            conn.setRequestProperty("x-goog-api-key", key)
             conn.setRequestProperty("content-type", "application/json")
             conn.outputStream.use { it.write(body.toString().toByteArray()) }
 
@@ -203,7 +207,11 @@ class MainActivity : Activity() {
                 }
                 throw RuntimeException("Error $code: $msg")
             }
-            return JSONObject(raw).getJSONArray("content").getJSONObject(0).getString("text")
+            val parts = JSONObject(raw).getJSONArray("candidates").getJSONObject(0)
+                .getJSONObject("content").getJSONArray("parts")
+            val sb = StringBuilder()
+            for (i in 0 until parts.length()) sb.append(parts.getJSONObject(i).optString("text", ""))
+            return sb.toString()
         } finally {
             conn.disconnect()
         }
@@ -454,10 +462,11 @@ class MainActivity : Activity() {
 
         // Configuración de la clave API
         val cfg = card()
-        cfg.addView(tv("CLAVE API (ANTHROPIC)", 11f, MUTED, true))
+        cfg.addView(tv("CLAVE API (GOOGLE GEMINI)", 11f, MUTED, true))
         cfg.addView(
             tv(
-                "Se guarda solo en este celular. Cada análisis consume créditos de tu cuenta de la API.",
+                "Gratis en aistudio.google.com (Get API key). Se guarda solo en este celular. " +
+                    "En el nivel gratis, Google puede usar tus capturas para mejorar sus productos.",
                 12f, MUTED
             ).apply { setPadding(0, dp(6), 0, 0) }
         )
@@ -468,8 +477,16 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
         }
         cfg.addView(keyInput)
+        cfg.addView(tv("Modelo (cámbialo si Google lo renombra)", 12f, MUTED).apply {
+            setPadding(0, dp(10), 0, 0)
+        })
+        modelInput = input("gemini-3.6-flash", InputType.TYPE_CLASS_TEXT).apply {
+            setText(prefs.getString("model", DEFAULT_MODEL))
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(4) }
+        }
+        cfg.addView(modelInput)
         keyStatus = tv(
-            if (prefs.getString("apikey", "").isNullOrEmpty()) "Sin clave guardada." else "Clave guardada ✔",
+            if (prefs.getString("geminikey", "").isNullOrEmpty()) "Sin clave guardada." else "Clave guardada ✔",
             12f, ACCENT
         ).apply { setPadding(0, dp(8), 0, 0) }
         cfg.addView(keyStatus)
@@ -477,16 +494,19 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(8) }
         }
-        keyRow.addView(button("Guardar clave", BG, ACCENT) {
+        keyRow.addView(button("Guardar", BG, ACCENT) {
             val k = keyInput.text.toString().trim()
+            val m = modelInput.text.toString().trim().ifEmpty { DEFAULT_MODEL }
+            prefs.edit().putString("model", m).apply()
             if (k.isNotEmpty()) {
-                prefs.edit().putString("apikey", k).apply()
+                prefs.edit().putString("geminikey", k).apply()
                 keyInput.setText("")
-                keyStatus.text = "Clave guardada ✔"
             }
+            keyStatus.text = if (prefs.getString("geminikey", "").isNullOrEmpty())
+                "Sin clave guardada." else "Clave guardada ✔"
         }, weighted())
         keyRow.addView(button("Quitar clave", BG, RED) {
-            prefs.edit().remove("apikey").apply()
+            prefs.edit().remove("geminikey").apply()
             keyStatus.text = "Sin clave guardada."
         }, weighted())
         cfg.addView(keyRow)
