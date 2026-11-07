@@ -8,6 +8,7 @@ y se compila con GitHub Actions.
 | App | Descarga directa del APK |
 | --- | --- |
 | hola-mundo | https://github.com/ayalalopes25-hub/claude-android/releases/download/hola-mundo-latest/app-debug.apk |
+| bitacora-demo | https://github.com/ayalalopes25-hub/claude-android/releases/download/bitacora-demo-latest/app-debug.apk |
 
 ## Cómo funciona
 
