@@ -1,0 +1,105 @@
+name: Build Android apps
+
+# Cada app vive en su propia carpeta (con su settings.gradle.kts).
+# Al hacer push solo se compilan las apps cuya carpeta cambió.
+# Cada app se publica en Releases con el tag "<carpeta>-latest".
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      app:
+        description: "Carpeta de la app a compilar (vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{ steps.set.outputs.apps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: set
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_APP: ${{ github.event.inputs.app }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          all=""
+          for d in */; do
+            d="${d%/}"
+            if [ -f "$d/settings.gradle.kts" ] || [ -f "$d/settings.gradle" ]; then
+              all="$all $d"
+            fi
+          done
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ -n "$INPUT_APP" ]; then list="$INPUT_APP"; else list="$all"; fi
+          else
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              files=$(git ls-files)
+            else
+              files=$(git diff --name-only "$BEFORE" "$SHA")
+            fi
+            if echo "$files" | grep -qE '^(\.github/workflows/build-android\.yml|debug\.keystore)$'; then
+              list="$all"
+            else
+              list=""
+              for d in $all; do
+                if echo "$files" | grep -q "^$d/"; then list="$list $d"; fi
+              done
+            fi
+          fi
+
+          json=$(printf '%s\n' $list | jq -R . | jq -sc 'map(select(length>0))')
+          echo "Apps a compilar: $json"
+          echo "apps=$json" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.apps != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.detect.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Compilar APK de depuración
+        working-directory: ${{ matrix.app }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Publicar en Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP: ${{ matrix.app }}
+          SHA: ${{ github.sha }}
+        run: |
+          cp "$APP/app/build/outputs/apk/debug/app-debug.apk" app-debug.apk
+          tag="$APP-latest"
+          gh release delete "$tag" --cleanup-tag --yes || true
+          gh release create "$tag" app-debug.apk \
+            --title "$APP (última versión)" \
+            --notes "APK de depuración compilado desde el commit $SHA." \
+            --target "$SHA" \
+            --latest=false
+          echo "Descarga: https://github.com/${{ github.repository }}/releases/download/$tag/app-debug.apk" >> "$GITHUB_STEP_SUMMARY"
