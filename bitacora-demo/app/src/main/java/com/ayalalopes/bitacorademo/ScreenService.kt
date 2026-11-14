@@ -335,7 +335,10 @@ class ScreenService : Service() {
                     if (isBlack(bmp)) throw RuntimeException(
                         "Pantalla negra: la app bloquea la captura. Usa Pocket Option desde el navegador."
                     )
-                    result = Gemini.analyze(key, model, encode(bmp), currentExpiry())
+                    result = Gemini.analyze(
+                        key, model, encode(bmp), currentExpiry(),
+                        prefs.getString("mode", Gemini.MODE_STRICT).orEmpty()
+                    )
                 } catch (e: Exception) {
                     result = e
                 }
@@ -352,15 +355,8 @@ class ScreenService : Service() {
     }
 
     private fun showResult(json: JSONObject) {
-        val prob = json.optInt("prob", 50).coerceIn(50, 75)
-        val sell = json.optString("accion").uppercase() == "SELL"
-        val pattern = json.optString("patron", "—")
-        val risk = json.optString("riesgo", "—").uppercase()
-        show(
-            "$prob%", if (sell) "SELL" else "BUY",
-            "$pattern · Riesgo $risk\nEstimación de la IA, no un cálculo",
-            if (sell) RED else GREEN
-        )
+        val d = Gemini.format(json)
+        show(d.big, d.line2, d.detail, d.line2Color)
     }
 
     /** Descarta fotogramas viejos y espera uno nuevo (el gráfico en vivo los genera sin parar). */

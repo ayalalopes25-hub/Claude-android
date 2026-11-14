@@ -53,16 +53,6 @@ class MainActivity : Activity() {
         const val REQ_PICK = 1
         const val REQ_CAPTURE = 2
         const val DEFAULT_MODEL = "gemini-3.6-flash"
-        const val SYSTEM_PROMPT =
-            "Eres un analista de acción del precio. Recibes una captura de un gráfico de velas " +
-                "de opciones binarias. Observa solo las últimas 4 a 6 velas del extremo derecho. " +
-                "Evalúa cuerpos, mechas, fuerza inmediata y patrón (pin bar, envolvente, continuación, giro). " +
-                "Se te indica el tiempo de expiración de la operación: a 5 o 15 segundos pesa solo el impulso inmediato de las últimas velas; a 1 o 3 minutos pesa más la tendencia reciente. " +
-            "Responde SOLO con JSON: {\"prob\": entero entre 50 y 75, \"accion\": \"BUY\" o \"SELL\", " +
-                "\"patron\": \"nombre corto\", \"riesgo\": \"LOW\" o \"MEDIUM\" o \"HIGH\"}. " +
-                "prob es tu confianza subjetiva, no una probabilidad calculada: sé conservador y casi " +
-                "nunca superes 65. Si la imagen no es un gráfico de velas legible, responde " +
-                "{\"error\": \"motivo breve\"}."
     }
 
     private lateinit var prefs: SharedPreferences
@@ -89,6 +79,7 @@ class MainActivity : Activity() {
     private lateinit var keyStatus: TextView
     private lateinit var liveStatus: TextView
     private val expiryBtns = mutableMapOf<Int, Button>()
+    private val modeBtns = mutableMapOf<String, Button>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -171,7 +162,13 @@ class MainActivity : Activity() {
         aiStatus.text = "Analizando captura…"
         Thread {
             val result: Any = try {
-                parseAnswer(callApi(key, encodeImage(uri)))
+                Gemini.analyze(
+                    key,
+                    prefs.getString("model", DEFAULT_MODEL).orEmpty().ifEmpty { DEFAULT_MODEL },
+                    encodeImage(uri),
+                    prefs.getInt("expiry", Expiry.DEFAULT),
+                    prefs.getString("mode", Gemini.MODE_STRICT).orEmpty()
+                )
             } catch (e: Exception) {
                 e
             }
@@ -200,84 +197,14 @@ class MainActivity : Activity() {
         return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
     }
 
-    private fun callApi(key: String, imageB64: String): String {
-        val model = prefs.getString("model", DEFAULT_MODEL).orEmpty().ifEmpty { DEFAULT_MODEL }
-        val image = JSONObject().put(
-            "inline_data",
-            JSONObject().put("mime_type", "image/jpeg").put("data", imageB64)
-        )
-        val text = JSONObject().put(
-            "text",
-            "Analiza esta captura. La operación expira en ${Expiry.long(prefs.getInt("expiry", Expiry.DEFAULT))}."
-        )
-        val body = JSONObject()
-            .put(
-                "systemInstruction",
-                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", SYSTEM_PROMPT)))
-            )
-            .put(
-                "contents",
-                JSONArray().put(JSONObject().put("parts", JSONArray().put(image).put(text)))
-            )
-            .put(
-                "generationConfig",
-                JSONObject().put("responseMimeType", "application/json").put("maxOutputTokens", 1024)
-            )
-
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
-        val conn = URL(url).openConnection() as HttpURLConnection
-        try {
-            conn.requestMethod = "POST"
-            conn.connectTimeout = 15000
-            conn.readTimeout = 60000
-            conn.doOutput = true
-            conn.setRequestProperty("x-goog-api-key", key)
-            conn.setRequestProperty("content-type", "application/json")
-            conn.outputStream.use { it.write(body.toString().toByteArray()) }
-
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-            if (code !in 200..299) {
-                val msg = try {
-                    JSONObject(raw).getJSONObject("error").getString("message")
-                } catch (e: Exception) {
-                    raw.take(150)
-                }
-                throw RuntimeException("Error $code: $msg")
-            }
-            val parts = JSONObject(raw).getJSONArray("candidates").getJSONObject(0)
-                .getJSONObject("content").getJSONArray("parts")
-            val sb = StringBuilder()
-            for (i in 0 until parts.length()) sb.append(parts.getJSONObject(i).optString("text", ""))
-            return sb.toString()
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private fun parseAnswer(text: String): JSONObject {
-        val start = text.indexOf('{')
-        val end = text.lastIndexOf('}')
-        if (start < 0 || end <= start) throw RuntimeException("Respuesta inesperada de la IA.")
-        val json = JSONObject(text.substring(start, end + 1))
-        if (json.has("error")) throw RuntimeException(json.optString("error", "No se pudo analizar."))
-        return json
-    }
-
     private fun showResult(json: JSONObject) {
-        val prob = json.optInt("prob", 50).coerceIn(50, 75)
-        val action = if (json.optString("accion").uppercase() == "SELL") "SELL" else "BUY"
-        val pattern = json.optString("patron", "—")
-        val risk = json.optString("riesgo", "—").uppercase()
-
-        aiProb.text = "$prob%"
-        aiAction.text = action
-        aiAction.setTextColor(if (action == "BUY") GREEN else RED)
-        aiPattern.text = "$pattern  ·  Riesgo: $risk"
-        aiStatus.text = "Estimación subjetiva de la IA, no un cálculo. " +
-            "Regístrala abajo y compárala con tu acierto real."
-        dir = action
+        val d = Gemini.format(json)
+        aiProb.text = d.big
+        aiAction.text = d.line2
+        aiAction.setTextColor(d.line2Color)
+        aiPattern.text = d.detail
+        aiStatus.text = "Regístrala abajo y compárala con tu acierto real."
+        dir = if (d.sell) "SELL" else "BUY"
         updateDirButtons()
     }
 
@@ -398,6 +325,33 @@ class MainActivity : Activity() {
         tf.addView(tfRow)
         root.addView(tf)
         updateExpiryButtons()
+
+        // Modo de análisis
+        val mc = card()
+        mc.addView(tv("MODO DE ANÁLISIS", 11f, MUTED, true))
+        mc.addView(
+            tv(
+                "Estricto: 3 filtros y filtro de paciencia, con veredicto OPERAR / ESPERAR / EVITAR " +
+                    "(la mayoría saldrán en ESPERAR o EVITAR). Clásico: el análisis anterior, con BUY o SELL, " +
+                    "patrón y riesgo.",
+                12f, MUTED
+            ).apply { setPadding(0, dp(6), 0, 0) }
+        )
+        val mcRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(MATCH, WRAP).apply { topMargin = dp(10) }
+        }
+        listOf(Gemini.MODE_STRICT to "ESTRICTO", Gemini.MODE_CLASSIC to "CLÁSICO").forEach { (id, label) ->
+            val b = button(label, ACCENT, BG) {
+                prefs.edit().putString("mode", id).apply()
+                updateModeButtons()
+            }
+            modeBtns[id] = b
+            mcRow.addView(b, weighted())
+        }
+        mc.addView(mcRow)
+        root.addView(mc)
+        updateModeButtons()
 
         // Panel de análisis con IA
         val ai = card()
@@ -608,6 +562,11 @@ class MainActivity : Activity() {
             isFillViewport = true
             addView(root)
         })
+    }
+
+    private fun updateModeButtons() {
+        val current = prefs.getString("mode", Gemini.MODE_STRICT)
+        modeBtns.forEach { (id, b) -> b.alpha = if (id == current) 1f else 0.35f }
     }
 
     private fun updateExpiryButtons() {
