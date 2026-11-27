@@ -9,6 +9,7 @@ y se compila con GitHub Actions.
 | --- | --- |
 | hola-mundo | https://github.com/ayalalopes25-hub/claude-android/releases/download/hola-mundo-latest/app-debug.apk |
 | bitacora-demo | https://github.com/ayalalopes25-hub/claude-android/releases/download/bitacora-demo-latest/app-debug.apk |
+| juego-3d | https://github.com/ayalalopes25-hub/claude-android/releases/download/juego-3d-latest/app-debug.apk |
 
 ## Cómo funciona
 
