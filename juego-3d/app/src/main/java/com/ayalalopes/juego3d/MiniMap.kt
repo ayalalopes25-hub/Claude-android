@@ -49,6 +49,21 @@ class MiniMap(ctx: Context, private val game: Game) : View(ctx) {
             n += 2
         }
 
+        // cajas de armas
+        paint.color = Color.rgb(80, 160, 255)
+        val cr = game.mapCrates
+        var m = 0
+        while (m + 1 < cr.size) {
+            val cx = s / 2f + (cr[m] - px) * k
+            val cz = s / 2f + (cr[m + 1] - pz) * k
+            canvas.drawRect(cx - 3f, cz - 3f, cx + 3f, cz + 3f, paint)
+            m += 2
+        }
+
+        // Lucia
+        paint.color = Color.rgb(255, 105, 160)
+        canvas.drawCircle(s / 2f + (game.lucia.x - px) * k, s / 2f + (game.lucia.z - pz) * k, 4.5f, paint)
+
         // mision (se pega al borde si queda fuera)
         var mx = s / 2f + (game.missionX - px) * k
         var mz = s / 2f + (game.missionZ - pz) * k

@@ -25,8 +25,11 @@ class MainActivity : Activity() {
     private lateinit var moneyTv: TextView
     private lateinit var starsTv: TextView
     private lateinit var hpTv: TextView
+    private lateinit var weaponTv: TextView
+    private lateinit var luciaTv: TextView
     private lateinit var missionTv: TextView
     private lateinit var msgTv: TextView
+    private lateinit var enterBtn: TextView
     private val handler = Handler(Looper.getMainLooper())
 
     private val ticker = object : Runnable {
@@ -52,30 +55,41 @@ class MainActivity : Activity() {
 
         // ----- textos del HUD -----
         moneyTv = hudText(26f, Color.rgb(124, 252, 138))
-        root.addView(moneyTv, corner(Gravity.TOP or Gravity.START, 16, 10, 0, 0))
-        hpTv = hudText(16f, Color.rgb(255, 120, 120))
-        root.addView(hpTv, corner(Gravity.TOP or Gravity.START, 16, 50, 0, 0))
-        starsTv = hudText(26f, Color.rgb(255, 212, 0))
-        root.addView(starsTv, corner(Gravity.TOP or Gravity.START, 16, 74, 0, 0))
-        missionTv = hudText(16f, Color.rgb(255, 212, 0))
-        root.addView(missionTv, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 10, 0, 0))
-        msgTv = hudText(22f, Color.WHITE)
-        root.addView(msgTv, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 44, 0, 0))
+        root.addView(moneyTv, corner(Gravity.TOP or Gravity.START, 16, 6, 0, 0))
+        hpTv = hudText(15f, Color.rgb(255, 120, 120))
+        root.addView(hpTv, corner(Gravity.TOP or Gravity.START, 16, 44, 0, 0))
+        starsTv = hudText(24f, Color.rgb(255, 212, 0))
+        root.addView(starsTv, corner(Gravity.TOP or Gravity.START, 16, 64, 0, 0))
+        weaponTv = hudText(15f, Color.rgb(255, 255, 255))
+        root.addView(weaponTv, corner(Gravity.TOP or Gravity.START, 16, 96, 0, 0))
+        luciaTv = hudText(15f, Color.rgb(255, 130, 175))
+        root.addView(luciaTv, corner(Gravity.TOP or Gravity.START, 16, 118, 0, 0))
+        missionTv = hudText(15f, Color.rgb(255, 212, 0))
+        root.addView(missionTv, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 8, 0, 0))
+        msgTv = hudText(20f, Color.WHITE)
+        msgTv.gravity = Gravity.CENTER
+        root.addView(msgTv, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 40, 0, 0))
 
         minimap = MiniMap(this, game)
-        val mm = FrameLayout.LayoutParams(dp(150), dp(150), Gravity.TOP or Gravity.END)
-        mm.setMargins(0, dp(10), dp(12), 0)
+        val mm = FrameLayout.LayoutParams(dp(130), dp(130), Gravity.TOP or Gravity.END)
+        mm.setMargins(0, dp(8), dp(12), 0)
         root.addView(minimap, mm)
 
         // ----- controles tactiles -----
-        val left = padButton("◀") { game.inLeft = it }
-        val right = padButton("▶") { game.inRight = it }
-        val gas = padButton("▲") { game.inGas = it }
-        val brake = padButton("▼") { game.inBrake = it }
-        root.addView(left, corner(Gravity.BOTTOM or Gravity.START, 24, 0, 0, 24, 88, 88))
-        root.addView(right, corner(Gravity.BOTTOM or Gravity.START, 128, 0, 0, 24, 88, 88))
-        root.addView(brake, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 128, 24, 88, 88))
-        root.addView(gas, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 24, 24, 88, 88))
+        val left = padButton("◀", 30f) { game.inLeft = it }
+        val right = padButton("▶", 30f) { game.inRight = it }
+        val gas = padButton("▲", 30f) { game.inGas = it }
+        val brake = padButton("▼", 30f) { game.inBrake = it }
+        val fire = padButton("FUEGO", 15f) { game.inFire = it }
+        enterBtn = padButton("ENTRAR", 14f) { if (it) game.actEnter = true }
+        val weapon = padButton("ARMA", 13f) { if (it) game.actWeapon = true }
+        root.addView(left, corner(Gravity.BOTTOM or Gravity.START, 24, 0, 0, 24, 84, 84))
+        root.addView(right, corner(Gravity.BOTTOM or Gravity.START, 120, 0, 0, 24, 84, 84))
+        root.addView(weapon, corner(Gravity.BOTTOM or Gravity.START, 24, 0, 0, 120, 70, 70))
+        root.addView(brake, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 120, 24, 84, 84))
+        root.addView(gas, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 24, 24, 84, 84))
+        root.addView(fire, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 24, 120, 84, 84))
+        root.addView(enterBtn, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 120, 120, 84, 84))
 
         setContentView(root)
     }
@@ -95,14 +109,15 @@ class MainActivity : Activity() {
         return tv
     }
 
-    private fun padButton(label: String, onChange: (Boolean) -> Unit): TextView {
+    private fun padButton(label: String, size: Float, onChange: (Boolean) -> Unit): TextView {
         val tv = TextView(this)
         tv.text = label
-        tv.textSize = 30f
+        tv.textSize = size
+        tv.typeface = android.graphics.Typeface.DEFAULT_BOLD
         tv.setTextColor(Color.WHITE)
         tv.gravity = Gravity.CENTER
         val bg = GradientDrawable()
-        bg.shape = GradientDrawable.OVAL
+        bg.setShape(GradientDrawable.OVAL)
         bg.setColor(Color.argb(90, 255, 255, 255))
         bg.setStroke(dp(2), Color.argb(200, 255, 255, 255))
         tv.background = bg
@@ -118,36 +133,44 @@ class MainActivity : Activity() {
     }
 
     private fun refreshHud() {
+        val onFoot = game.pcar == null
         moneyTv.text = "\$" + game.money
         val lvl = min(5, game.heat.toInt())
         starsTv.text = "★".repeat(lvl) + "☆".repeat(5 - lvl)
-        hpTv.text = "Coche: " + max(0, game.player.hp.toInt()) + "%"
-        val m = game.missionLen
+        val car = game.pcar
+        hpTv.text = "Vida: " + max(0, game.hp.toInt()) + "%" + if (car != null) "   Coche: " + max(0, car.hp.toInt()) + "%" else ""
+        val w = WEAPONS[game.curW]
+        weaponTv.text = w.name + ": " + game.ammo[game.curW]
+        luciaTv.text = if (game.lucia.inCar) "Lucía: en el coche" else "Lucía: contigo"
+        enterBtn.text = if (onFoot) "SUBIR" else "BAJAR"
         val dx = game.missionX - game.player.x
         val dz = game.missionZ - game.player.z
         val d = Math.sqrt((dx * dx + dz * dz).toDouble()).toInt()
         missionTv.text = "Misión: llega al punto amarillo ($d m)"
-        msgTv.text = if (game.wastedT > 0f) "¡DESTRUIDO!" else if (game.msgT > 0f) game.msg else ""
+        msgTv.text = if (game.wastedT > 0f) "¡MUERTO!" else if (game.msgT > 0f) game.msg else ""
         minimap.invalidate()
     }
 
     // ----- teclado (para probar en emulador / con mando) -----
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyDown(keyCode, true)) return true
+        if (key(keyCode, true)) return true
         return super.onKeyDown(keyCode, event)
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyDown(keyCode, false)) return true
+        if (key(keyCode, false)) return true
         return super.onKeyUp(keyCode, event)
     }
 
-    private fun keyDown(code: Int, down: Boolean): Boolean {
+    private fun key(code: Int, down: Boolean): Boolean {
         when (code) {
             KeyEvent.KEYCODE_W, KeyEvent.KEYCODE_DPAD_UP -> game.inGas = down
             KeyEvent.KEYCODE_S, KeyEvent.KEYCODE_DPAD_DOWN -> game.inBrake = down
             KeyEvent.KEYCODE_A, KeyEvent.KEYCODE_DPAD_LEFT -> game.inLeft = down
             KeyEvent.KEYCODE_D, KeyEvent.KEYCODE_DPAD_RIGHT -> game.inRight = down
+            KeyEvent.KEYCODE_SPACE, KeyEvent.KEYCODE_F -> game.inFire = down
+            KeyEvent.KEYCODE_E -> { if (down) game.actEnter = true }
+            KeyEvent.KEYCODE_Q -> { if (down) game.actWeapon = true }
             else -> return false
         }
         return true
@@ -178,6 +201,7 @@ class MainActivity : Activity() {
         super.onPause()
         handler.removeCallbacks(ticker)
         glView.onPause()
-        game.inLeft = false; game.inRight = false; game.inGas = false; game.inBrake = false
+        game.inLeft = false; game.inRight = false; game.inGas = false
+        game.inBrake = false; game.inFire = false
     }
 }

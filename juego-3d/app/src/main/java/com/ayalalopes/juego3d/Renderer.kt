@@ -71,6 +71,15 @@ class Renderer(private val game: Game) : GLSurfaceView.Renderer {
     private val GREEN = floatArrayOf(0.25f, 0.9f, 0.4f)
     private val SKIN = floatArrayOf(0.94f, 0.76f, 0.60f)
     private val DARKPANTS = floatArrayOf(0.15f, 0.17f, 0.25f)
+    private val JACKET = floatArrayOf(0.18f, 0.35f, 0.75f)
+    private val PINK = floatArrayOf(0.95f, 0.40f, 0.62f)
+    private val SKIRT = floatArrayOf(0.60f, 0.15f, 0.35f)
+    private val HAIR = floatArrayOf(0.25f, 0.12f, 0.07f)
+    private val FLASHCOL = floatArrayOf(1f, 0.9f, 0.4f)
+    private val TRACER = floatArrayOf(1f, 0.95f, 0.5f)
+    private val CRATECOL = arrayOf(
+        floatArrayOf(0.25f, 0.55f, 1f), floatArrayOf(1f, 0.6f, 0.15f), floatArrayOf(0.85f, 0.2f, 0.2f)
+    )
     private val BUILD = arrayOf(
         floatArrayOf(0.62f, 0.60f, 0.56f), floatArrayOf(0.55f, 0.45f, 0.40f),
         floatArrayOf(0.45f, 0.52f, 0.60f), floatArrayOf(0.70f, 0.66f, 0.55f),
@@ -226,9 +235,28 @@ class Renderer(private val game: Game) : GLSurfaceView.Renderer {
     private fun drawCar(c: Car, t: Float) {
         val police = c.kind == 1
         part(c, 0f, 0.03f, 0f, 4.7f, 0.02f, 2.3f, SHADOW, 0f)
-        part(c, 0f, 0.65f, 0f, 4.4f, 0.75f, 2.0f, c.col, 0f)
-        part(c, -0.3f, 1.3f, 0f, 2.3f, 0.65f, 1.8f, GLASS, 0f)
-        part(c, -0.3f, 1.66f, 0f, 1.9f, 0.1f, 1.6f, c.col, 0f)
+        if (police || c.type == 0) {
+            // sedan
+            part(c, 0f, 0.65f, 0f, 4.4f, 0.75f, 2.0f, c.col, 0f)
+            part(c, -0.3f, 1.3f, 0f, 2.3f, 0.65f, 1.8f, GLASS, 0f)
+            part(c, -0.3f, 1.66f, 0f, 1.9f, 0.1f, 1.6f, c.col, 0f)
+        } else if (c.type == 1) {
+            // deportivo: bajo, cabina corta y alerón
+            part(c, 0f, 0.55f, 0f, 4.5f, 0.6f, 2.0f, c.col, 0f)
+            part(c, -0.2f, 1.08f, 0f, 1.9f, 0.5f, 1.7f, GLASS, 0f)
+            part(c, -0.2f, 1.36f, 0f, 1.5f, 0.08f, 1.5f, c.col, 0f)
+            part(c, -2.05f, 1.05f, 0f, 0.35f, 0.12f, 2.0f, BLACK, 0f)
+            part(c, -2.05f, 0.85f, 0.7f, 0.15f, 0.4f, 0.15f, BLACK, 0f)
+            part(c, -2.05f, 0.85f, -0.7f, 0.15f, 0.4f, 0.15f, BLACK, 0f)
+        } else {
+            // camioneta: cabina adelante y caja atras
+            part(c, 0f, 0.7f, 0f, 4.8f, 0.8f, 2.1f, c.col, 0f)
+            part(c, 0.7f, 1.45f, 0f, 1.8f, 0.75f, 1.9f, GLASS, 0f)
+            part(c, 0.7f, 1.86f, 0f, 1.6f, 0.1f, 1.8f, c.col, 0f)
+            part(c, -1.4f, 1.3f, 1.0f, 2.0f, 0.5f, 0.12f, c.col, 0f)
+            part(c, -1.4f, 1.3f, -1.0f, 2.0f, 0.5f, 0.12f, c.col, 0f)
+            part(c, -2.4f, 1.3f, 0f, 0.12f, 0.5f, 2.0f, c.col, 0f)
+        }
         for (sx in floatArrayOf(1.4f, -1.4f)) for (sz in floatArrayOf(1.0f, -1.0f)) {
             part(c, sx, 0.45f, sz, 0.9f, 0.9f, 0.35f, BLACK, 0f)
         }
@@ -242,6 +270,39 @@ class Renderer(private val game: Game) : GLSurfaceView.Renderer {
             part(c, -0.3f, 1.8f, 0.5f, 0.4f, 0.25f, 0.6f, if (f) RED else BLUE, 1f)
             part(c, -0.3f, 1.8f, -0.5f, 0.4f, 0.25f, 0.6f, if (f) BLUE else RED, 1f)
         }
+    }
+
+    /** El jugador a pie, con el arma en la mano. */
+    private fun drawPlayerFoot(g: Game) {
+        val p = g.player
+        val yaw = -p.a * 57.29578f
+        val ca = cos(p.a)
+        val sa = sin(p.a)
+        box(p.x, 0.4f, p.z, 0.4f, 0.8f, 0.55f, yaw, DARKPANTS, 0f)
+        box(p.x, 1.1f, p.z, 0.45f, 0.75f, 0.65f, yaw, JACKET, 0f)
+        box(p.x, 1.7f, p.z, 0.42f, 0.42f, 0.42f, yaw, SKIN, 0f)
+        val len = if (g.curW == 0) 0.6f else if (g.curW == 1) 0.95f else 1.25f
+        val off = 0.35f + len / 2f
+        val gx = p.x + ca * off - sa * 0.3f
+        val gz = p.z + sa * off + ca * 0.3f
+        box(gx, 1.2f, gz, len, 0.18f, 0.18f, yaw, BLACK, 0f)
+        if (g.flash > 0f) {
+            val fo = off + len / 2f + 0.2f
+            box(p.x + ca * fo - sa * 0.3f, 1.2f, p.z + sa * fo + ca * 0.3f, 0.35f, 0.35f, 0.35f, yaw, FLASHCOL, 1f)
+        }
+    }
+
+    /** Lucia: falda y blusa rosa, pelo largo y un rombo rosa flotante para encontrarla. */
+    private fun drawGirl(l: Girl, t: Float) {
+        val yaw = -l.a * 57.29578f
+        val ca = cos(l.a)
+        val sa = sin(l.a)
+        box(l.x, 0.35f, l.z, 0.3f, 0.7f, 0.4f, yaw, SKIN, 0f)
+        box(l.x, 0.85f, l.z, 0.6f, 0.4f, 0.7f, yaw, SKIRT, 0f)
+        box(l.x, 1.3f, l.z, 0.42f, 0.55f, 0.6f, yaw, PINK, 0f)
+        box(l.x, 1.75f, l.z, 0.4f, 0.4f, 0.4f, yaw, SKIN, 0f)
+        box(l.x - ca * 0.1f, 1.7f, l.z - sa * 0.1f, 0.5f, 0.6f, 0.55f, yaw, HAIR, 0f)
+        box(l.x, 2.7f, l.z, 0.35f, 0.35f, 0.35f, t * 90f, PINK, 1f)
     }
 
     private fun drawPed(q: Ped) {
@@ -308,11 +369,12 @@ class Renderer(private val game: Game) : GLSurfaceView.Renderer {
         val p = game.player
         val cdx = cos(game.camA)
         val cdz = sin(game.camA)
-        val dist = 10f + abs(p.speed) * 0.15f
+        val onFoot = game.pcar == null
+        val dist = if (onFoot) 5.5f else 10f + abs(p.speed) * 0.15f
         camX = p.x - cdx * dist
         camZ = p.z - cdz * dist
-        val camY = 4.6f + abs(p.speed) * 0.04f
-        Matrix.setLookAtM(view, 0, camX, camY, camZ, p.x + cdx * 6f, 1.3f, p.z + cdz * 6f, 0f, 1f, 0f)
+        val camY = if (onFoot) 2.9f else 4.6f + abs(p.speed) * 0.04f
+        Matrix.setLookAtM(view, 0, camX, camY, camZ, p.x + cdx * 6f, if (onFoot) 1.5f else 1.3f, p.z + cdz * 6f, 0f, 1f, 0f)
         Matrix.multiplyMM(vp, 0, proj, 0, view, 0)
 
         GLES20.glUseProgram(prog)
@@ -338,12 +400,27 @@ class Renderer(private val game: Game) : GLSurfaceView.Renderer {
             if (abs(pk.x - p.x) < 200f && abs(pk.z - p.z) < 200f)
                 box(pk.x, 1.1f, pk.z, 0.9f, 0.9f, 0.3f, t * 150f, GREEN, 1f)
         }
+        for (cr in game.crates) {
+            if (abs(cr.x - p.x) < 200f && abs(cr.z - p.z) < 200f) {
+                box(cr.x, 0.9f, cr.z, 0.9f, 0.9f, 0.9f, t * 80f, CRATECOL[cr.w], 1f)
+                box(cr.x, 1.7f, cr.z, 0.3f, 0.3f, 0.3f, -t * 120f, FLASHCOL, 1f)
+            }
+        }
         for (c in game.cars) {
-            if (c.kind == 2 && game.wastedT > 0f) continue
             if (abs(c.x - p.x) < 260f && abs(c.z - p.z) < 260f) drawCar(c, t)
         }
         for (q in game.peds) {
             if (abs(q.x - p.x) < 200f && abs(q.z - p.z) < 200f) drawPed(q)
+        }
+        if (game.pcar == null && game.wastedT <= 0f) drawPlayerFoot(game)
+        if (!game.lucia.inCar && game.wastedT <= 0f) drawGirl(game.lucia, t)
+        for (tr in game.tracers) {
+            val dx = tr.x2 - tr.x1
+            val dz = tr.z2 - tr.z1
+            val len = Math.hypot(dx.toDouble(), dz.toDouble()).toFloat()
+            if (len < 0.1f) continue
+            val ang = Math.atan2(dz.toDouble(), dx.toDouble()).toFloat()
+            box((tr.x1 + tr.x2) / 2f, 1.2f, (tr.z1 + tr.z2) / 2f, len, 0.07f, 0.07f, -ang * 57.29578f, TRACER, 1f)
         }
         for (q in game.parts) {
             box(q.x, q.y, q.z, q.size, q.size, q.size, 0f, q.col, 1f)
