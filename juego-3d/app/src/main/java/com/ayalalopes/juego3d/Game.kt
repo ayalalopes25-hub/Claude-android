@@ -30,6 +30,11 @@ val ACC = floatArrayOf(15f, 22f, 11f)
 val TURN = floatArrayOf(2.2f, 2.7f, 1.8f)
 val SPEEDMUL = floatArrayOf(1f, 1.15f, 0.9f)
 
+val SPORT = arrayOf(
+    floatArrayOf(0.70f, 0.72f, 0.76f),
+    floatArrayOf(0.10f, 0.32f, 0.58f),
+    floatArrayOf(0.80f, 0.06f, 0.07f)
+)
 val PALETTE = arrayOf(
     floatArrayOf(0.75f, 0.22f, 0.18f), floatArrayOf(0.18f, 0.40f, 0.80f),
     floatArrayOf(0.18f, 0.62f, 0.35f), floatArrayOf(0.84f, 0.63f, 0.16f),
@@ -107,6 +112,11 @@ class Car(var x: Float, var z: Float, var a: Float, var kind: Int) {
     var fireCd = rnd(0.5f, 1.5f)
     var dead = false
     var col: FloatArray = PALETTE[(Math.random() * PALETTE.size).toInt() % PALETTE.size]
+
+    init {
+        // los deportivos salen en plata, azul metalico o rojo
+        if (type == 1) col = SPORT[(Math.random() * SPORT.size).toInt() % SPORT.size]
+    }
 }
 
 class Ped(var x: Float, var z: Float) {

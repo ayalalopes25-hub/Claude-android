@@ -16,7 +16,7 @@ Los protagonistas son la pareja: tú y **Lucía**. Al abrir el juego ves la pant
 - **Coches:** sedán, deportivo (rápido) y camioneta (lenta). Puedes robar cualquier coche civil o aparcado.
 - **Armas:** pistola, metralleta y escopeta, con munición. Recoge **cajas de colores** por las calles (azul = pistola, naranja = metralleta, roja = escopeta); las patrullas destruidas también dejan una. Si hay una patrulla cerca, el disparo apunta solo hacia ella.
 - **Policía:** atropellar peatones, robar coches, chocar o disparar sube las estrellas ★. Las patrullas te persiguen y te disparan.
-- **Lucía:** tu novia. Va siempre contigo: te sigue a pie, se sube a tu coche, dispara a la policía por ti y te cuida (junto a ella te recuperas más rápido). Lleva chaqueta de cuero, vaqueros ajustados y melena larga, y aparece en rosa en el minimapa.
+- **Lucía:** tu novia. Va siempre contigo: te sigue a pie, se sube a tu coche, dispara a la policía por ti y te cuida (junto a ella te recuperas más rápido). Lleva chaqueta de cuero negra, vaqueros oscuros, botas y melena ondulada (y tu compañero, chaqueta vaquera y pantalón cargo), y aparece en rosa en el minimapa.
 - **Misiones:** llega al punto amarillo para cobrar.
 - Si mueres reapareces con un coche nuevo y pagas $200.
 - Con teclado (emulador / mando): WASD o flechas, Espacio/F fuego, E subir/bajar, Q cambiar de arma.

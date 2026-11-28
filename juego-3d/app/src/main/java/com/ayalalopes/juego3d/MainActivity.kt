@@ -1,6 +1,7 @@
 package com.ayalalopes.juego3d
 
 import android.app.Activity
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -14,6 +15,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.TextView
 import kotlin.math.max
 import kotlin.math.min
@@ -111,12 +113,22 @@ class MainActivity : Activity() {
         // ----- pantalla de inicio con la pareja protagonista -----
         introView = FrameLayout(this)
         introView.isClickable = true
+        try {
+            val iv = ImageView(this)
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP)
+            val st = assets.open("pareja.jpg")
+            iv.setImageBitmap(BitmapFactory.decodeStream(st))
+            st.close()
+            introView.addView(iv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        } catch (e: Exception) {
+            // sin imagen: se ve la escena 3D de fondo
+        }
         val title = hudText(40f, Color.WHITE)
         title.text = "JUEGO 3D"
         root.addView(introView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
         introView.addView(title, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 16, 0, 0))
         val sub = hudText(18f, Color.rgb(255, 150, 190))
-        sub.text = "Lucía y tú ♥ Ciudad al atardecer"
+        sub.text = "Lucía y tú ♥"
         introView.addView(sub, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 70, 0, 0))
         val hint = hudText(13f, Color.WHITE)
         hint.text = "Bolita: caminar o conducir · Arrastra la pantalla: mirar a todos lados"
