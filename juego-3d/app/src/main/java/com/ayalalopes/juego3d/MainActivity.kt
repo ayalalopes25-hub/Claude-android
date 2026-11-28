@@ -2,6 +2,7 @@ package com.ayalalopes.juego3d
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.opengl.GLSurfaceView
 import android.os.Bundle
@@ -22,6 +23,7 @@ class MainActivity : Activity() {
     private val game = Game()
     private lateinit var glView: GLSurfaceView
     private lateinit var minimap: MiniMap
+    private lateinit var joystick: Joystick
     private lateinit var moneyTv: TextView
     private lateinit var starsTv: TextView
     private lateinit var hpTv: TextView
@@ -30,6 +32,9 @@ class MainActivity : Activity() {
     private lateinit var missionTv: TextView
     private lateinit var msgTv: TextView
     private lateinit var enterBtn: TextView
+    private lateinit var fireBtn: TextView
+    private lateinit var weaponBtn: TextView
+    private lateinit var introView: FrameLayout
     private val handler = Handler(Looper.getMainLooper())
 
     private val ticker = object : Runnable {
@@ -49,8 +54,24 @@ class MainActivity : Activity() {
 
         glView = GLSurfaceView(this)
         glView.setEGLContextClientVersion(2)
-        glView.setEGLConfigChooser(8, 8, 8, 0, 16, 0)
+        glView.setEGLConfigChooser(8, 8, 8, 0, 24, 0)
         glView.setRenderer(Renderer(game))
+        // arrastrar sobre la pantalla = mirar a todos lados (camara libre)
+        var lx = 0f
+        var ly = 0f
+        glView.setOnTouchListener { _, e ->
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { lx = e.x; ly = e.y; game.lookActive = true }
+                MotionEvent.ACTION_MOVE -> {
+                    game.lookDX += e.x - lx
+                    game.lookDY += e.y - ly
+                    lx = e.x
+                    ly = e.y
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> game.lookActive = false
+            }
+            true
+        }
         root.addView(glView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
 
         // ----- textos del HUD -----
@@ -75,23 +96,60 @@ class MainActivity : Activity() {
         mm.setMargins(0, dp(8), dp(12), 0)
         root.addView(minimap, mm)
 
-        // ----- controles tactiles -----
-        val left = padButton("◀", 30f) { game.inLeft = it }
-        val right = padButton("▶", 30f) { game.inRight = it }
-        val gas = padButton("▲", 30f) { game.inGas = it }
-        val brake = padButton("▼", 30f) { game.inBrake = it }
-        val fire = padButton("FUEGO", 15f) { game.inFire = it }
-        enterBtn = padButton("ENTRAR", 14f) { if (it) game.actEnter = true }
-        val weapon = padButton("ARMA", 13f) { if (it) game.actWeapon = true }
-        root.addView(left, corner(Gravity.BOTTOM or Gravity.START, 24, 0, 0, 24, 84, 84))
-        root.addView(right, corner(Gravity.BOTTOM or Gravity.START, 120, 0, 0, 24, 84, 84))
-        root.addView(weapon, corner(Gravity.BOTTOM or Gravity.START, 24, 0, 0, 120, 70, 70))
-        root.addView(brake, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 120, 24, 84, 84))
-        root.addView(gas, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 24, 24, 84, 84))
-        root.addView(fire, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 24, 120, 84, 84))
-        root.addView(enterBtn, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 120, 120, 84, 84))
+        // ----- bolita (joystick) a la izquierda -----
+        joystick = Joystick(this) { x, y -> game.joyX = x; game.joyY = y }
+        root.addView(joystick, corner(Gravity.BOTTOM or Gravity.START, 28, 0, 0, 28, 150, 150))
+
+        // ----- botones de accion a la derecha -----
+        fireBtn = padButton("FUEGO", 15f) { game.inFire = it }
+        enterBtn = padButton("SUBIR", 14f) { if (it) game.actEnter = true }
+        weaponBtn = padButton("ARMA", 13f) { if (it) game.actWeapon = true }
+        root.addView(fireBtn, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 28, 28, 96, 96))
+        root.addView(enterBtn, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 140, 28, 80, 80))
+        root.addView(weaponBtn, corner(Gravity.BOTTOM or Gravity.END, 0, 0, 36, 136, 66, 66))
+
+        // ----- pantalla de inicio con la pareja protagonista -----
+        introView = FrameLayout(this)
+        introView.isClickable = true
+        val title = hudText(40f, Color.WHITE)
+        title.text = "JUEGO 3D"
+        root.addView(introView, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        introView.addView(title, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 16, 0, 0))
+        val sub = hudText(18f, Color.rgb(255, 150, 190))
+        sub.text = "Lucía y tú ♥ Ciudad al atardecer"
+        introView.addView(sub, corner(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 70, 0, 0))
+        val hint = hudText(13f, Color.WHITE)
+        hint.text = "Bolita: caminar o conducir · Arrastra la pantalla: mirar a todos lados"
+        introView.addView(hint, corner(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 0, 0, 90))
+        val play = TextView(this)
+        play.text = "JUGAR"
+        play.textSize = 22f
+        play.typeface = Typeface.DEFAULT_BOLD
+        play.setTextColor(Color.WHITE)
+        play.gravity = Gravity.CENTER
+        val pbg = GradientDrawable()
+        pbg.setShape(GradientDrawable.RECTANGLE)
+        pbg.setCornerRadius(dp(28).toFloat())
+        pbg.setColor(Color.argb(230, 220, 40, 90))
+        pbg.setStroke(dp(2), Color.WHITE)
+        play.background = pbg
+        play.setOnClickListener { startGame() }
+        introView.addView(play, corner(Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL, 0, 0, 0, 24, 200, 56))
 
         setContentView(root)
+        showControls(false)
+    }
+
+    private fun showControls(on: Boolean) {
+        val vis = if (on) View.VISIBLE else View.INVISIBLE
+        val all = arrayOf<View>(minimap, joystick, moneyTv, starsTv, hpTv, weaponTv, luciaTv, missionTv, msgTv, enterBtn, fireBtn, weaponBtn)
+        for (v in all) v.visibility = vis
+    }
+
+    private fun startGame() {
+        game.start()
+        introView.visibility = View.GONE
+        showControls(true)
     }
 
     private fun corner(g: Int, l: Int, t: Int, r: Int, b: Int, w: Int = -2, h: Int = -2): FrameLayout.LayoutParams {
@@ -105,7 +163,7 @@ class MainActivity : Activity() {
         tv.textSize = size
         tv.setTextColor(color)
         tv.setShadowLayer(5f, 2f, 2f, Color.BLACK)
-        tv.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        tv.typeface = Typeface.DEFAULT_BOLD
         return tv
     }
 
@@ -113,7 +171,7 @@ class MainActivity : Activity() {
         val tv = TextView(this)
         tv.text = label
         tv.textSize = size
-        tv.typeface = android.graphics.Typeface.DEFAULT_BOLD
+        tv.typeface = Typeface.DEFAULT_BOLD
         tv.setTextColor(Color.WHITE)
         tv.gravity = Gravity.CENTER
         val bg = GradientDrawable()
@@ -133,6 +191,7 @@ class MainActivity : Activity() {
     }
 
     private fun refreshHud() {
+        if (game.intro) return
         val onFoot = game.pcar == null
         moneyTv.text = "\$" + game.money
         val lvl = min(5, game.heat.toInt())
@@ -141,7 +200,7 @@ class MainActivity : Activity() {
         hpTv.text = "Vida: " + max(0, game.hp.toInt()) + "%" + if (car != null) "   Coche: " + max(0, car.hp.toInt()) + "%" else ""
         val w = WEAPONS[game.curW]
         weaponTv.text = w.name + ": " + game.ammo[game.curW]
-        luciaTv.text = if (game.lucia.inCar) "Lucía: en el coche" else "Lucía: contigo"
+        luciaTv.text = if (game.lucia.inCar) "Lucía ♥ en el coche" else "Lucía ♥ contigo"
         enterBtn.text = if (onFoot) "SUBIR" else "BAJAR"
         val dx = game.missionX - game.player.x
         val dz = game.missionZ - game.player.z
@@ -203,5 +262,6 @@ class MainActivity : Activity() {
         glView.onPause()
         game.inLeft = false; game.inRight = false; game.inGas = false
         game.inBrake = false; game.inFire = false
+        game.joyX = 0f; game.joyY = 0f; game.lookActive = false
     }
 }

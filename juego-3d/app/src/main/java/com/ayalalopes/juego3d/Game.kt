@@ -114,6 +114,7 @@ class Ped(var x: Float, var z: Float) {
     var sp = rnd(1.5f, 2.6f)
     var t = rnd(1f, 4f)
     var flee = 0f
+    var walkT = rnd(0f, 6f)
     val col: FloatArray = floatArrayOf(rnd(0.2f, 0.9f), rnd(0.2f, 0.9f), rnd(0.2f, 0.9f))
 }
 
@@ -124,6 +125,8 @@ class Girl(var x: Float, var z: Float) {
     var fireCd = 0.5f
     var stuck = 0f
     var talkCd = 8f
+    var walkT = 0f
+    var moving = false
 }
 
 class Particle(
@@ -145,6 +148,13 @@ class Game {
     @Volatile var inFire = false
     @Volatile var actEnter = false
     @Volatile var actWeapon = false
+    /** Joystick (bolita): x derecha+, y adelante+, en -1..1. */
+    @Volatile var joyX = 0f
+    @Volatile var joyY = 0f
+    /** Arrastre de camara (pixeles acumulados) y si el dedo sigue puesto. */
+    @Volatile var lookDX = 0f
+    @Volatile var lookDY = 0f
+    @Volatile var lookActive = false
 
     val cars = ArrayList<Car>()
     val peds = ArrayList<Ped>()
@@ -165,6 +175,12 @@ class Game {
     var fireCd = 0f
     var prevFire = false
     var flash = 0f
+    var intro = true
+    var introT = 0f
+    var pWalk = 0f
+    var camYaw = 0f
+    var camPitch = 0.25f
+    var lookOff = 0f
 
     var money = 0
     var heat = 0f
@@ -205,10 +221,21 @@ class Game {
         }
         for (k in 0 until 8) crates.add(Crate(0f, 0f, k % 3).also { placeCrate(it) })
         newMission()
-        showMsg("Lucía va contigo. Conduce al punto amarillo o bájate (ENTRAR) y dispara")
+        showMsg("Lucía, tu novia, va contigo ♥ Conduce al punto amarillo o bájate y dispara")
     }
 
     fun showMsg(s: String) { msg = s; msgT = 3.5f }
+
+    /** Termina la intro y empieza la partida. */
+    fun start() {
+        intro = false
+        lookDX = 0f
+        lookDY = 0f
+        showMsg("Lucía va contigo ♥ Conduce al punto amarillo o bájate y dispara")
+    }
+
+    private fun jx(): Float = clampF(joyX + (if (inRight) 1f else 0f) - (if (inLeft) 1f else 0f), -1f, 1f)
+    private fun jy(): Float = clampF(joyY + (if (inGas) 1f else 0f) - (if (inBrake) 1f else 0f), -1f, 1f)
 
     // ---------- creacion ----------
     private fun placeCar(c: Car, cx: Float, cz: Float, rmin: Float, rmax: Float) {
@@ -319,11 +346,12 @@ class Game {
 
     private fun drivePlayer(c: Car, dt: Float) {
         val t = c.type
-        val st = (if (inRight) 1f else 0f) - (if (inLeft) 1f else 0f)
-        if (inGas) c.speed += (if (c.speed < 0f) 40f else ACC[t]) * dt
-        if (inBrake) c.speed -= (if (c.speed > 0f) 30f else 9f) * dt
+        val st = jx()
+        val th = jy()
+        if (th > 0.1f) c.speed += (if (c.speed < 0f) 40f else ACC[t]) * th * dt
+        if (th < -0.1f) c.speed -= (if (c.speed > 0f) 30f else 9f) * (-th) * dt
         c.speed -= c.speed * 0.3f * dt
-        if (!inGas && !inBrake) c.speed *= max(0f, 1f - 0.8f * dt)
+        if (abs(th) <= 0.1f) c.speed *= max(0f, 1f - 0.8f * dt)
         c.speed = clampF(c.speed, -9f, MAXV[t])
         val na = c.a + st * TURN[t] * clampF(c.speed / 7f, -1f, 1f) * dt
         if (!carBlocked(c.x, c.z, na)) c.a = na
@@ -339,17 +367,31 @@ class Game {
 
     private fun walkPlayer(dt: Float) {
         val p = player
-        val st = (if (inRight) 1f else 0f) - (if (inLeft) 1f else 0f)
-        p.a += st * 2.8f * dt
+        val ix = jx()
+        val iy = jy()
+        val m = min(1f, hypot(ix, iy))
         var v = 0f
-        if (inGas) v = 5.5f
-        if (inBrake) v = -3f
-        val nx = p.x + cos(p.a) * v * dt
-        val nz = p.z + sin(p.a) * v * dt
+        var dx = 0f
+        var dz = 0f
+        if (m > 0.12f) {
+            val fx = cos(camYaw)
+            val fz = sin(camYaw)
+            dx = fx * iy - fz * ix
+            dz = fz * iy + fx * ix
+            val len = hypot(dx, dz)
+            if (len > 0.001f) { dx /= len; dz /= len }
+            v = if (m > 0.95f) 8f else 5.5f * m
+        }
+        // el personaje mira hacia donde camina; al disparar mira hacia donde apunta la camara
+        val target = if (inFire) camYaw else if (v > 0f) atan2(dz, dx) else p.a
+        p.a += clampF(angDiff(p.a, target), -12f * dt, 12f * dt)
+        val nx = p.x + dx * v * dt
+        val nz = p.z + dz * v * dt
         if (!footBlocked(nx, nz)) { p.x = nx; p.z = nz }
         else if (!footBlocked(nx, p.z)) p.x = nx
         else if (!footBlocked(p.x, nz)) p.z = nz
         p.speed = v
+        pWalk += v * dt * 1.2f
     }
 
     // ---------- subir / bajar de coches ----------
@@ -366,6 +408,7 @@ class Game {
             if (!placed) { player.x = c.x; player.z = c.z }
             player.a = c.a
             player.speed = 0f
+            camYaw = camA + lookOff
             c.kind = 3
             pcar = null
             if (lucia.inCar) { lucia.inCar = false; girlTeleport(lucia) }
@@ -390,6 +433,8 @@ class Game {
             best.stun = 0f
             best.stuck = 0f
             pcar = best
+            camA = camYaw
+            lookOff = 0f
             player.x = best.x; player.z = best.z; player.a = best.a; player.speed = best.speed
             if (dst(lucia.x, lucia.z, best.x, best.z) < 14f) lucia.inCar = true
         }
@@ -681,6 +726,7 @@ class Game {
             sp = 5.5f
             q.flee -= dt
         }
+        q.walkT += sp * dt * 1.3f
         val nx = q.x + cos(q.a) * sp * dt
         val nz = q.z + sin(q.a) * sp * dt
         if (solid(nx, nz)) q.a += PIF / 2f + rnd(0f, 1f) else { q.x = nx; q.z = nz }
@@ -692,6 +738,8 @@ class Game {
     private fun girlMove(g: Girl, tx: Float, tz: Float, sp: Float, dt: Float) {
         val a = atan2(tz - g.z, tx - g.x)
         g.a = a
+        g.moving = true
+        g.walkT += sp * dt * 1.2f
         val nx = g.x + cos(a) * sp * dt
         val nz = g.z + sin(a) * sp * dt
         if (!solid(nx, nz)) { g.x = nx; g.z = nz; g.stuck = 0f }
@@ -715,6 +763,7 @@ class Game {
     private fun luciaUpdate(dt: Float) {
         val g = lucia
         val p = player
+        g.moving = false
         if (wastedT > 0f) return
         val d = dst(g.x, g.z, p.x, p.z)
         if (pcar != null) {
@@ -722,7 +771,7 @@ class Game {
                 g.x = p.x; g.z = p.z; g.a = p.a
             } else if (d < 3.5f) {
                 g.inCar = true
-                showMsg("Lucía se sube al coche")
+                showMsg("Lucía: ¡Vámonos, mi amor! ♥")
             } else if (d > 45f || g.stuck > 2f) {
                 g.inCar = true
             } else {
@@ -754,9 +803,9 @@ class Game {
                 if (g.talkCd <= 0f) {
                     g.talkCd = 10f
                     showMsg(when ((Math.random() * 3).toInt()) {
-                        0 -> "Lucía: ¡Yo me encargo de esos!"
-                        1 -> "Lucía: ¡Sigue, yo te cubro!"
-                        else -> "Lucía: ¡Cuidado, vienen más!"
+                        0 -> "Lucía: ¡Yo me encargo de esos, mi amor!"
+                        1 -> "Lucía: ¡Sigue, cariño, yo te cubro!"
+                        else -> "Lucía: ¡Cuidado, vienen más! ♥"
                     })
                 }
             } else g.fireCd = 0.3f
@@ -826,15 +875,24 @@ class Game {
         hp = 100f
         heat = 0f
         camA = 0f
+        camYaw = 0f
+        lookOff = 0f
         lucia.inCar = true
         for (c in cars) if (c.kind == 1) c.dead = true
         if (ammo[0] < 30) ammo[0] = 30
         money = max(0, money - 200)
-        showMsg("Gastos médicos: -\$200. Lucía te espera en el coche")
+        showMsg("Gastos médicos: -\$200. Lucía te espera en el coche ♥")
     }
 
     // ---------- bucle principal ----------
     fun update(dt: Float) {
+        if (intro) {
+            introT += dt
+            time += dt
+            for (c in cars) if (c.kind == 0) roadDrive(c, dt)
+            for (q in peds) pedUpdate(q, dt)
+            return
+        }
         time += dt
         if (msgT > 0f) msgT -= dt
         val p = player
@@ -853,8 +911,10 @@ class Game {
             if (pc != null) drivePlayer(pc, dt) else walkPlayer(dt)
             shootUpdate(dt)
             if (heat < 1f) {
-                hp = min(100f, hp + 2f * dt)
-                if (pc != null) pc.hp = min(100f, pc.hp + 2f * dt)
+                // junto a Lucia te recuperas mas rapido
+                val rate = if (lucia.inCar || dst(lucia.x, lucia.z, p.x, p.z) < 8f) 5f else 2f
+                hp = min(100f, hp + rate * dt)
+                if (pc != null) pc.hp = min(100f, pc.hp + rate * dt)
             }
             if (hp <= 0f) {
                 wastedT = 3.2f
@@ -950,6 +1010,20 @@ class Game {
         tracers.removeAll { it.life <= 0f }
         if (abs(p.speed) > 20f && pcar != null && Math.random() < 0.3) burst(p.x, 0.4f, p.z, 1, PUFF, 1f, 0.4f)
 
-        camA += angDiff(camA, p.a) * min(1f, dt * (if (pcar == null) 8f else 3.5f))
+        // camara libre: arrastrar para mirar a todos lados
+        val ldx = lookDX
+        val ldy = lookDY
+        lookDX = 0f
+        lookDY = 0f
+        if (pcar != null) {
+            lookOff = clampF(lookOff + ldx * 0.006f, -3.1f, 3.1f)
+            if (!lookActive) lookOff *= max(0f, 1f - 2.5f * dt)
+            camA += angDiff(camA, p.a) * min(1f, dt * 3.5f)
+            camYaw = camA + lookOff
+        } else {
+            camYaw += ldx * 0.006f
+            camA = camYaw
+        }
+        camPitch = clampF(camPitch + ldy * 0.004f, -0.15f, 1.0f)
     }
 }
